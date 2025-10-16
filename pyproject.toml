@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "asyncio>=4.0.0",
+    "bcrypt>=5.0.0",
     "fastmcp>=2.12.4",
     "google-genai>=1.43.0",
     "python-dotenv>=1.1.1",
+    "statistics>=1.0.3.5",
     "streamlit>=1.50.0",
+    "streamlit-mic-recorder>=0.0.8",
 ]
