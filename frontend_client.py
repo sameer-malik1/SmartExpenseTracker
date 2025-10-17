@@ -3,12 +3,13 @@ import asyncio
 from google import genai
 from google.genai import types
 from fastmcp import Client as FastMCPClient
-from datetime import date
+from datetime import date,datetime
 from dotenv import load_dotenv
 from db_utils import register_user, login_user
 import os
-from utils.voice_models import speech_to_text, text_to_speech
+from utils.voice_models import speech_to_text, text_to_speech, speech_to_text2
 from streamlit_mic_recorder import mic_recorder
+
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -225,80 +226,51 @@ else:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-
-    # Custom CSS to fix chat input bar at bottom
-    st.markdown("""
-    <style>
-    /* Hide default Streamlit footer and menu */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-
-    /* Chat container spacing */
-    .main {
-        padding-bottom: 100px; /* Leave space for input bar */
-    }
-
-    /* Fixed chat input bar */
-    .chat-input-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        background-color: white;
-        border-top: 1px solid #ddd;
-        padding: 10px 20px;
-        box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
-        z-index: 999;
-    }
-
-    .stTextInput>div>div>input {
-        font-size: 16px;
-        padding: 8px;
-    }
-
-    </style>
-    """, unsafe_allow_html=True)
+    
+    # Initialize session state variables
+    if "audio_processed" not in st.session_state:
+        st.session_state.audio_processed = False
+    if "last_audio_name" not in st.session_state:
+        st.session_state.last_audio_name = None
+    
+    user_input = st.chat_input("Ask me something (e.g. 'add 500 for travel'):")
+    audio_value = st.audio_input("Record high quality audio", sample_rate=48000)
+    print("audio value: ",audio_value)
 
 
+    # Check if new audio is recorded
+    if audio_value:
+        # If new recording (different filename or new bytes)
+        if audio_value.name != st.session_state.last_audio_name:
+            st.session_state.audio_processed = False
+            st.session_state.last_audio_name = audio_value.name
 
-    # define columns for chat and voice
-    col1,  col2 = st.columns([4,1])
+        # Only transcribe if not already processed
+        if not st.session_state.audio_processed:
+            os.makedirs("recordings", exist_ok=True)
 
-    # --- FIXED BOTTOM BAR (CHAT INPUT + MIC) ---
-    st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
+            filename = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + audio_value.name
+            filepath = os.path.join("recordings", filename)
 
-    with col1:
-        # Chat input
-        user_input = st.chat_input("Ask me something (e.g. 'add 500 for travel'):")
+            with open(filepath, "wb") as f:
+                f.write(audio_value.read())
 
-    with col2:
-        audio = mic_recorder(
-            start_prompt="🎤 Start recording",
-            stop_prompt="⏹️ Stop recording",
-            just_once=True,  # record once per click
-            use_container_width=True,
-            key="recorder"
-        )
-
-        if audio is not None:
-            # Save recorded audio
-            with open("temp_recorded_audio.wav", "wb") as f:
-                f.write(audio["bytes"])
-
-            st.audio("temp_recorded_audio.wav")  # playback for user
-
-            with st.spinner("Transcribing recorded audio..."):
+            with st.spinner("🪄 Transcribing..."):
                 try:
-                    user_input = speech_to_text("temp_recorded_audio.wav")
-                    st.success(f"Recognized voice: {user_input}")
+                    user_input = speech_to_text(filepath)
+                    st.session_state.audio_processed = True  # mark as handled
                 except Exception as e:
                     st.error(f"Transcription failed: {e}")
-                    user_query = None
-    st.markdown('</div>', unsafe_allow_html=True)
+                finally:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+    else:
+        # No audio currently uploaded
+        st.session_state.last_audio_name = None
+        st.session_state.audio_processed = False
 
-
+    # Now handle user input (text or transcribed)
     if user_input:
-        # Add user message to history
         st.session_state.messages.append({"role": "user", "content": user_input})
         
         with st.chat_message("user"):
@@ -308,15 +280,14 @@ else:
             try:
                 resp = asyncio.run(run_query(user_input))
                 ai_response = extract_text_from_response(resp)
-                
-                # Add AI response to history
+
                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
                 
                 with st.chat_message("assistant"):
                     st.write(ai_response)
-                    
             except Exception as e:
                 error_msg = f"Error: {str(e)}"
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
                 with st.chat_message("assistant"):
                     st.error(error_msg)
+    

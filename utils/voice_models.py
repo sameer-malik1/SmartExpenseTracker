@@ -1,8 +1,14 @@
 from google import genai
 from google.genai import types
 import wave
+from dotenv import load_dotenv
+import os
 
+load_dotenv()  # Load environment variables from .env file
 
+gemini_api_key = os.getenv("gemini_api_key")
+
+client = genai.Client(api_key=gemini_api_key)
 # myfile = client.files.upload(file=audio_file)
 prompt = 'Generate a transcript of the speech. written in engligh wording not in hindi language'
 
@@ -17,6 +23,37 @@ def speech_to_text(audio_file):
     contents=[prompt, myfile]
     )
     return stt_response.text
+
+def speech_to_text2(uploaded_file):
+    """
+    Transcribe a Streamlit UploadedFile (from st.audio_input or st.file_uploader)
+    using Gemini.
+    """
+    try:
+        # Save uploaded file temporarily
+        temp_path = f"temp_{uploaded_file.name}"
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.read())
+
+        # Upload to Gemini Files
+        myfile = client.files.upload(temp_path)
+
+        # Perform transcription
+        stt_response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=["Transcribe this audio into text:", myfile]
+        )
+
+        # Clean up temp file
+        os.remove(temp_path)
+
+        return getattr(stt_response, "text", "(No transcription result)")
+
+    except Exception as e:
+        print(f"Speech-to-text failed: {e}")
+        return ""
+
+
 
 # gemini tts
 # Set up the wave file to save the output:
